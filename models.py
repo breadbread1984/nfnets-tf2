@@ -39,34 +39,37 @@ class WSConv2D(tf.keras.layers.Conv2D):
     w = (self.kernel - mean) * scale;
     return w;
   def call(self, inputs):
-    input_shape = inputs.shape
+    input_shape = inputs.shape;
     if self._is_causal:  # Apply causal padding to inputs for Conv1D.
-      inputs = array_ops.pad(inputs, self._compute_causal_padding(inputs))
+      inputs = array_ops.pad(inputs, self._compute_causal_padding(inputs));
     kernel = self.standardize_weight();
-    outputs = self._convolution_op(inputs, kernel)
+    outputs = self._convolution_op(inputs, kernel);
     if self.use_bias:
-      output_rank = outputs.shape.rank
+      output_rank = outputs.shape.rank;
       if self.rank == 1 and self._channels_first:
         # nn.bias_add does not accept a 1D input tensor.
-        bias = array_ops.reshape(self.bias, (1, self.filters, 1))
-        outputs += bias
+        bias = array_ops.reshape(self.bias, (1, self.filters, 1));
+        outputs += bias;
       else:
         # Handle multiple batch dimensions.
         if output_rank is not None and output_rank > 2 + self.rank:
           def _apply_fn(o):
-            return nn.bias_add(o, self.bias, data_format=self._tf_data_format)
+            return nn.bias_add(o, self.bias, data_format=self._tf_data_format);
           outputs = conv_utils.squeeze_batch_dims(
-              outputs, _apply_fn, inner_rank=self.rank + 1)
+              outputs, _apply_fn, inner_rank=self.rank + 1);
         else:
           outputs = nn.bias_add(
-              outputs, self.bias, data_format=self._tf_data_format)
+              outputs, self.bias, data_format=self._tf_data_format);
     if not context.executing_eagerly():
       # Infer the static output shape:
-      out_shape = self.compute_output_shape(input_shape)
-      outputs.set_shape(out_shape)
+      out_shape = self.compute_output_shape(input_shape);
+      outputs.set_shape(out_shape);
     if self.activation is not None:
-      return self.activation(outputs)
-    return outputs
+      return self.activation(outputs);
+    return outputs;
+
+def NFNet():
+  inputs = tf.keras.Input(());
 
 if __name__ == "__main__":
   import numpy as np;
