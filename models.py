@@ -46,20 +46,6 @@ class WSConv2D(tf.keras.layers.Conv2D):
   def build(self, input_shape):
     super(WSConv2D, self).build(input_shape);
     self.gain = self.add_weight(shape = (tf.shape(self.kernel)[-1],), dtype = tf.float32, initializer = tf.keras.initializers.Ones()); # self.gain.shape = (cout,)
-    # Convert Keras formats to TF native formats.
-    if self.padding == 'causal':
-      tf_padding = 'VALID'  # Causal padding handled in `call`.
-    elif isinstance(self.padding, str):
-      tf_padding = self.padding.upper()
-    else:
-      tf_padding = self.padding
-    self._convolution_op = functools.partial(
-        nn_ops.convolution_v2,
-        strides=list(self.strides),
-        padding=tf_padding,
-        dilations=list(self.dilation_rate),
-        data_format=self._tf_data_format,
-        name=self.__class__.__name__)
   def standardize_weight(self):
     # NOTE: kernel.shape = (kh, kw, cin, cout)
     mean = tf.math.reduce_mean(self.kernel, axis = (0,1,2)); # mean.shape = (cout,)
@@ -73,7 +59,7 @@ class WSConv2D(tf.keras.layers.Conv2D):
     if self._is_causal:  # Apply causal padding to inputs for Conv1D.
       inputs = array_ops.pad(inputs, self._compute_causal_padding(inputs));
     kernel = self.standardize_weight();
-    outputs = self._convolution_op(inputs, kernel);
+    outputs = self.convolution_op(inputs, kernel);
     if self.use_bias:
       output_rank = outputs.shape.rank;
       if self.rank == 1 and self._channels_first:
