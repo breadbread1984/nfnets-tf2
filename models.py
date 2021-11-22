@@ -2,9 +2,45 @@
 
 import functools;
 import tensorflow as tf;
+import tensorflow_addons as tfa;
 from tensorflow.python.eager import context;
 from tensorflow.python.ops import nn;
 from tensorflow.python.ops import nn_ops;
+
+nfnet_params = {
+    'F0': {
+        'width': [256, 512, 1536, 1536], 'depth': [1, 2, 6, 3],
+        'train_imsize': 192, 'test_imsize': 256,
+        'RA_level': '405', 'drop_rate': 0.2},
+    'F1': {
+        'width': [256, 512, 1536, 1536], 'depth': [2, 4, 12, 6],
+        'train_imsize': 224, 'test_imsize': 320,
+        'RA_level': '410', 'drop_rate': 0.3},
+    'F2': {
+        'width': [256, 512, 1536, 1536], 'depth': [3, 6, 18, 9],
+        'train_imsize': 256, 'test_imsize': 352,
+        'RA_level': '410', 'drop_rate': 0.4},
+    'F3': {
+        'width': [256, 512, 1536, 1536], 'depth': [4, 8, 24, 12],
+        'train_imsize': 320, 'test_imsize': 416,
+        'RA_level': '415', 'drop_rate': 0.4},
+    'F4': {
+        'width': [256, 512, 1536, 1536], 'depth': [5, 10, 30, 15],
+        'train_imsize': 384, 'test_imsize': 512,
+        'RA_level': '415', 'drop_rate': 0.5},
+    'F5': {
+        'width': [256, 512, 1536, 1536], 'depth': [6, 12, 36, 18],
+        'train_imsize': 416, 'test_imsize': 544,
+        'RA_level': '415', 'drop_rate': 0.5},
+    'F6': {
+        'width': [256, 512, 1536, 1536], 'depth': [7, 14, 42, 21],
+        'train_imsize': 448, 'test_imsize': 576,
+        'RA_level': '415', 'drop_rate': 0.5},
+    'F7': {
+        'width': [256, 512, 1536, 1536], 'depth': [8, 16, 48, 24],
+        'train_imsize': 480, 'test_imsize': 608,
+        'RA_level': '415', 'drop_rate': 0.5},
+};
 
 class WSConv2D(tf.keras.layers.Conv2D):
   def build(self, input_shape):
@@ -17,19 +53,13 @@ class WSConv2D(tf.keras.layers.Conv2D):
       tf_padding = self.padding.upper()
     else:
       tf_padding = self.padding
-    tf_dilations = list(self.dilation_rate)
-    tf_strides = list(self.strides)
-
-    tf_op_name = self.__class__.__name__
-    if tf_op_name == 'Conv1D':
-      tf_op_name = 'conv1d'  # Backwards compat.
     self._convolution_op = functools.partial(
         nn_ops.convolution_v2,
-        strides=tf_strides,
+        strides=list(self.strides),
         padding=tf_padding,
-        dilations=tf_dilations,
+        dilations=list(self.dilation_rate),
         data_format=self._tf_data_format,
-        name=tf_op_name)
+        name=self.__class__.__name__)
   def standardize_weight(self):
     # NOTE: kernel.shape = (kh, kw, cin, cout)
     mean = tf.math.reduce_mean(self.kernel, axis = (0,1,2)); # mean.shape = (cout,)
@@ -68,11 +98,24 @@ class WSConv2D(tf.keras.layers.Conv2D):
       return self.activation(outputs);
     return outputs;
 
-def NFNet():
-  inputs = tf.keras.Input(());
+def NFBlock(in_channel, out_channel, alpha = 0.2, beta = 1.0):
+  inputs = tf.keras.Input((None, None, in_channel));
+  results = tf.keras.layers.GELU()(inputs);
+  results = tf.keras.layers.Lambda(lambda x, b: x * b, arguments = {'b': beta})(results);
+  
+
+def NFNet(variant = 'F0'):
+  assert variant in ['F0', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7'];
+  inputs = tf.keras.Input((None, None, 3)); # inputs.shape = (batch, height, width, 3)
+  results = WSConv2D(16, kernel_size = (3,3), strides = (2,2), padding = 'same', name = 'stem_conv0', activation = tf.keras.activations.gelu)(inputs);
+  results = WSConv2D(32, kernel_size = (3,3), strides = (1,1), padding = 'same', name = 'stem_conv1', activation = tf.keras.activations.gelu)(results);
+  results = WSConv2D(64, kernel_size = (3,3), strides = (1,1), padding = 'same', name = 'stem_conv2', activation = tf.keras.activations.gelu)(results);
+  results = WSConv2D(nfnet_params[variant]['width'][0] // 2, kernel_size = (3,3), strides = (2,2), padding = 'same', name = 'stem_conv3')(results);
+  return tf.keras.Model(inputs = inputs, outputs = results);
 
 if __name__ == "__main__":
   import numpy as np;
   a = np.random.normal(size = (4,224,224,3));
-  b = WSConv2D(10,(3,3), padding = 'same')(a);
-  print(b.shape)
+  model = NFNet();
+  b = model(a);
+  model.save('model.h5');
