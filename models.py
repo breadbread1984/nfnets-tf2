@@ -98,11 +98,12 @@ class WSConv2D(tf.keras.layers.Conv2D):
       return self.activation(outputs);
     return outputs;
 
-def NFBlock(in_channel, out_channel, alpha = 0.2, beta = 1.0):
+def NFBlock(in_channel, out_channel, alpha = 0.2, beta = 1.0, stride = 1):
   inputs = tf.keras.Input((None, None, in_channel));
   results = tf.keras.layers.GELU()(inputs);
   results = tf.keras.layers.Lambda(lambda x, b: x * b, arguments = {'b': beta})(results);
-  
+  if stride > 1:
+    shortcut = tf.keras.layers.AveragePooling2D(pool_size = (2,2), strides = (2,2), padding = 'same')(results);
 
 def NFNet(variant = 'F0'):
   assert variant in ['F0', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7'];
