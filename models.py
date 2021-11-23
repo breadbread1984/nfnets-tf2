@@ -11,35 +11,67 @@ nfnet_params = {
     'F0': {
         'width': [256, 512, 1536, 1536], 'depth': [1, 2, 6, 3],
         'train_imsize': 192, 'test_imsize': 256,
-        'RA_level': '405', 'drop_rate': 0.2},
+        'RA_level': '405', 'drop_rate': 0.2,
+        'expansion': [0.5] * 4,
+        'group_width': [128] * 4,
+        'big_width': [True] * 4,
+        'stride_pattern': [1, 2, 2, 2],},
     'F1': {
         'width': [256, 512, 1536, 1536], 'depth': [2, 4, 12, 6],
         'train_imsize': 224, 'test_imsize': 320,
-        'RA_level': '410', 'drop_rate': 0.3},
+        'RA_level': '410', 'drop_rate': 0.3,
+        'expansion': [0.5] * 4,
+        'group_width': [128] * 4,
+        'big_width': [True] * 4,
+        'stride_pattern': [1, 2, 2, 2],},
     'F2': {
         'width': [256, 512, 1536, 1536], 'depth': [3, 6, 18, 9],
         'train_imsize': 256, 'test_imsize': 352,
-        'RA_level': '410', 'drop_rate': 0.4},
+        'RA_level': '410', 'drop_rate': 0.4,
+        'expansion': [0.5] * 4,
+        'group_width': [128] * 4,
+        'big_width': [True] * 4,
+        'stride_pattern': [1, 2, 2, 2],},
     'F3': {
         'width': [256, 512, 1536, 1536], 'depth': [4, 8, 24, 12],
         'train_imsize': 320, 'test_imsize': 416,
-        'RA_level': '415', 'drop_rate': 0.4},
+        'RA_level': '415', 'drop_rate': 0.4,
+        'expansion': [0.5] * 4,
+        'group_width': [128] * 4,
+        'big_width': [True] * 4,
+        'stride_pattern': [1, 2, 2, 2],},
     'F4': {
         'width': [256, 512, 1536, 1536], 'depth': [5, 10, 30, 15],
         'train_imsize': 384, 'test_imsize': 512,
-        'RA_level': '415', 'drop_rate': 0.5},
+        'RA_level': '415', 'drop_rate': 0.5,
+        'expansion': [0.5] * 4,
+        'group_width': [128] * 4,
+        'big_width': [True] * 4,
+        'stride_pattern': [1, 2, 2, 2],},
     'F5': {
         'width': [256, 512, 1536, 1536], 'depth': [6, 12, 36, 18],
         'train_imsize': 416, 'test_imsize': 544,
-        'RA_level': '415', 'drop_rate': 0.5},
+        'RA_level': '415', 'drop_rate': 0.5,
+        'expansion': [0.5] * 4,
+        'group_width': [128] * 4,
+        'big_width': [True] * 4,
+        'stride_pattern': [1, 2, 2, 2],},
     'F6': {
         'width': [256, 512, 1536, 1536], 'depth': [7, 14, 42, 21],
         'train_imsize': 448, 'test_imsize': 576,
-        'RA_level': '415', 'drop_rate': 0.5},
+        'RA_level': '415', 'drop_rate': 0.5,
+        'expansion': [0.5] * 4,
+        'group_width': [128] * 4,
+        'big_width': [True] * 4,
+        'stride_pattern': [1, 2, 2, 2],},
     'F7': {
         'width': [256, 512, 1536, 1536], 'depth': [8, 16, 48, 24],
         'train_imsize': 480, 'test_imsize': 608,
-        'RA_level': '415', 'drop_rate': 0.5},
+        'RA_level': '415', 'drop_rate': 0.5,
+        'expansion': [0.5] * 4,
+        'group_width': [128] * 4,
+        'big_width': [True] * 4,
+        'stride_pattern': [1, 2, 2, 2],},
 };
 
 class WSConv2D(tf.keras.layers.Conv2D):
@@ -135,9 +167,12 @@ class AutoScaled(tf.keras.layers.Layer):
     return cls(**config);
 
 def NFBlock(in_channel, out_channel, kernel_size = 3, alpha = 0.2, beta = 1.0, stride = 1, group_size = 128, big_width = True, expansion = 0.5, use_two_convs = True, se_ratio = 0.5, stochdepth_rate = None):
+  # normalization free residual block
   inputs = tf.keras.Input((None, None, in_channel));
   results = tf.keras.layers.GELU()(inputs);
+  # 1) normalize input with its variance(beta)
   results = tf.keras.layers.Lambda(lambda x, b: x * b, arguments = {'b': beta})(results);
+  # 2) short cut output
   if stride > 1:
     shortcut = tf.keras.layers.AveragePooling2D(pool_size = (2,2), strides = (2,2), padding = 'same')(results);
     shortcut = WSConv2D(out_channel, kernel_size = (1,1), padding = 'same', name = 'conv_shortcut')(shortcut);
@@ -145,6 +180,7 @@ def NFBlock(in_channel, out_channel, kernel_size = 3, alpha = 0.2, beta = 1.0, s
     shortcut = WSConv2D(out_channel, kernel_size = (1,1), padding = 'same', name = 'conv_shortcut')(shortcut);
   else:
     shortcut = results;
+  # 3) residual branch uses weight scaled convolution to prevent meanshift
   width = int((out_channel if big_width else in_channel) * expansion);
   results = WSConv2D(group_size * (width // group_size), kernel_size = (1,1), groups = width // group_size, padding = 'same', name = 'conv0', activation = tf.keras.activations.gelu)(results);
   results = WSConv2D(group_size * (width // group_size), kernel_size = (kernel_size, kernel_size), groups = width // group_size, padding = 'same', name = 'conv1')(results);
@@ -153,22 +189,32 @@ def NFBlock(in_channel, out_channel, kernel_size = 3, alpha = 0.2, beta = 1.0, s
     results = WSConv2D(group_size * (width // group_size), kernel_size = (kernel_size, kernel_size), groups = width // group_size, padding = 'same', name = 'conv1b')(results);
   results = tfa.layers.GELU(results);
   results = WSConv2D(out_channel, kernel_size = (1,1), padding = 'same', name = 'conv2')(results); # results.shape = (batch, height, width, out_channel)
+  # use channel attention
   attention = SqueezeExcite(out_channel, out_channel, se_ratio)(results); # ch_attention.shape = (batch, height, width, out_channel)
   results = tf.keras.layers.Lambda(lambda x: x[0] * 2 * x[1])([attention, results]); # results.shape = (batch, height, width, out_channel)
   res_avg_var = tf.keras.layers.Lambda(lambda x: tf.math.reduce_mean(tf.math.reduce_variance(x, axis = (0,1,2))))(results);
+  # use sample wise dropout
   if stochdepth_rate is not None and 0. < stochdepth_rate < 1.:
     results = StochDepth(out_channel, stochdepth_rate)(results); # results.shape = (batch, height, width, out_channel)
   results = AutoScaled(scalar = True, initializer = 'zeros', name = 'skip_gain')(results); # results.shape = (batch, height, width, out_channels)
+  # 4) combine the scaled residual and shortcut
   results = tf.keras.layers.Lambda(lambda x, a: x[0] * a + x[1], arguments = {'a': alpha})([results, shortcut]);
   return tf.keras.Model(inputs = inputs, outputs = (results, res_avg_var));
 
 def NFNet(variant = 'F0'):
   assert variant in ['F0', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7'];
   inputs = tf.keras.Input((None, None, 3)); # inputs.shape = (batch, height, width, 3)
+  # 1) stem
   results = WSConv2D(16, kernel_size = (3,3), strides = (2,2), padding = 'same', name = 'stem_conv0', activation = tf.keras.activations.gelu)(inputs);
   results = WSConv2D(32, kernel_size = (3,3), strides = (1,1), padding = 'same', name = 'stem_conv1', activation = tf.keras.activations.gelu)(results);
   results = WSConv2D(64, kernel_size = (3,3), strides = (1,1), padding = 'same', name = 'stem_conv2', activation = tf.keras.activations.gelu)(results);
   results = WSConv2D(nfnet_params[variant]['width'][0] // 2, kernel_size = (3,3), strides = (2,2), padding = 'same', name = 'stem_conv3')(results);
+  # 2) body
+  for block_width, stage_depth, expand_ratio, group_size, big_wdith, stride in zip(nfnet_params[variant]['width'], nfnet_params[variant]['depth'], nfnet_params[variant]['expansion'],
+                                                                                   nfnet_params[variant]['group_width'], nfnet_params[variant]['big_width'], nfnet_params[variant]['stride_pattern']):
+    for block_index in range(stage_depth):
+      
+  
   return tf.keras.Model(inputs = inputs, outputs = results);
 
 if __name__ == "__main__":
