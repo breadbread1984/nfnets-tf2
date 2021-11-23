@@ -168,6 +168,8 @@ class AutoScaled(tf.keras.layers.Layer):
 
 def NFBlock(in_channel, out_channel, kernel_size = 3, alpha = 0.2, beta = 1.0, stride = 1, group_size = 128, big_width = True, expansion = 0.5, use_two_convs = True, se_ratio = 0.5, stochdepth_rate = None):
   # normalization free residual block
+  # alpha: variance weight of residual branch, the variance of the output of the normalization free residual block is (1 + alpha**2) * var(inputs)
+  # beta: 1 / sqrt(var(inputs))
   inputs = tf.keras.Input((None, None, in_channel));
   results = tf.keras.layers.GELU()(inputs);
   # 1) normalize input with its variance(beta)
