@@ -151,8 +151,12 @@ class AutoScaled(tf.keras.layers.Layer):
       initializer = tf.keras.initializers.Ones();
     elif self.initializer == 'zeros':
       initializer = tf.keras.initializers.Zeros();
+    else:
+      raise Exception('unknown initializer!');
     if self.scalar == False:
       self.gain = self.add_weight(shape = input_shape, dtype = tf.float32, initializer = initializer);
+    else:
+      self.gain = self.add_weight(shape = (), dtype = tf.float32, initializer = initializer);
   def call(self, inputs):
     results = inputs * self.gain;
     return results;
