@@ -95,7 +95,46 @@ def SqueezeExcite(in_channel, out_channel, se_ratio = 0.5, hidden_ch = None):
   results = tf.keras.layers.Dense(out_channel, activation = tf.keras.activations.sigmoid)(results); # results.shape = (batch, 1, 1, out_channel)
   return tf.keras.Model(inputs = inputs, outputs = results);
 
-def NFBlock(in_channel, out_channel, kernel_size = 3, alpha = 0.2, beta = 1.0, stride = 1, group_size = 128, big_width = True, expansion = 0.5, use_two_convs = True, se_ratio = 0.5):
+def StochDepth(in_channel, drop_rate, scale_by_keep = False):
+  # sample wise dropout
+  training = tf.python.keras.backend.learning_phase();
+  inputs = tf.keras.Input((None, None, in_channel));
+  results = inputs;
+  if not training:
+    return tf.keras.Model(inputs = inputs, outputs = results);
+  r = tf.keras.layers.Lambda(lambda x: tf.random.uniform(shape = (tf.shape(x)[0], 1, 1, 1), dtype = tf.float32))(inputs);
+  mask = tf.keras.layers.Lambda(lambda x, dr: tf.math.floor(1. - dr + x), arguments = {'dr': drop_rate})(r);
+  if scale_by_keep:
+    results = tf.keras.layers.Lambda(lambda x, dr: x / (1. - dr))(results);
+  results = tf.keras.layers.Lambda(lambda x: x[0] * x[1])([results, mask]);
+  return tf.keras.Model(inputs = inputs, outputs = results);
+
+class AutoScaled(tf.keras.layers.Layer):
+  def __init__(self, scalar = True, initializer = 'zeros', **kwargs):
+    assert initializer in ['ones', 'zeros'];
+    self.scalar = scalar;
+    self.initializer = initializer;
+    super(AutoGained, self).__init__(**kwargs);
+  def build(self, input_shape):
+    if self.initializer == 'ones':
+      initializer = tf.keras.initializers.Ones();
+    elif self.initializer == 'zeros':
+      initializer = tf.keras.initializers.Zeros();
+    if self.scalar == False:
+      self.gain = self.add_weight(shape = input_shape, dtype = tf.float32, initializer = initializer);
+  def call(self, inputs):
+    results = inputs * self.gain;
+    return results;
+  def get_config(self):
+    config = super(AutoScaled, self).get_config();
+    config['scalar'] = self.scalar;
+    config['initializer'] = self.initializer;
+    return config;
+  @classmethod
+  def from_config(cls, config):
+    return cls(**config);
+
+def NFBlock(in_channel, out_channel, kernel_size = 3, alpha = 0.2, beta = 1.0, stride = 1, group_size = 128, big_width = True, expansion = 0.5, use_two_convs = True, se_ratio = 0.5, stochdepth_rate = None):
   inputs = tf.keras.Input((None, None, in_channel));
   results = tf.keras.layers.GELU()(inputs);
   results = tf.keras.layers.Lambda(lambda x, b: x * b, arguments = {'b': beta})(results);
@@ -116,7 +155,12 @@ def NFBlock(in_channel, out_channel, kernel_size = 3, alpha = 0.2, beta = 1.0, s
   results = WSConv2D(out_channel, kernel_size = (1,1), padding = 'same', name = 'conv2')(results); # results.shape = (batch, height, width, out_channel)
   attention = SqueezeExcite(out_channel, out_channel, se_ratio)(results); # ch_attention.shape = (batch, height, width, out_channel)
   results = tf.keras.layers.Lambda(lambda x: x[0] * 2 * x[1])([attention, results]); # results.shape = (batch, height, width, out_channel)
-  
+  res_avg_var = tf.keras.layers.Lambda(lambda x: tf.math.reduce_mean(tf.math.reduce_variance(x, axis = (0,1,2))))(results);
+  if stochdepth_rate is not None and 0. < stochdepth_rate < 1.:
+    results = StochDepth(out_channel, stochdepth_rate)(results); # results.shape = (batch, height, width, out_channel)
+  results = AutoScaled(scalar = True, initializer = 'zeros', name = 'skip_gain')(results); # results.shape = (batch, height, width, out_channels)
+  results = tf.keras.layers.Lambda(lambda x, a: x[0] * a + x[1], arguments = {'a': alpha})([results, shortcut]);
+  return tf.keras.Model(inputs = inputs, outputs = (results, res_avg_var));
 
 def NFNet(variant = 'F0'):
   assert variant in ['F0', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7'];
