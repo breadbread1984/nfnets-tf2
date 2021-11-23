@@ -207,7 +207,7 @@ def NFBlock(in_channel, out_channel, kernel_size = 3, alpha = 0.2, beta = 1.0, s
 
 def NFNet(variant = 'F0', width = 1., use_two_convs = True, se_ratio = 0.5, stochdepth_rate = 0.1):
   assert variant in ['F0', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7'];
-  # NOTE: inputs must satisfy that mean(inputs) = 0, var(inputs) = 1
+  # NOTE: inputs must satisfy that inputs ~ N(0,1)
   inputs = tf.keras.Input((None, None, 3)); # inputs.shape = (batch, height, width, 3)
   # 1) stem
   results = WSConv2D(16, kernel_size = (3,3), strides = (2,2), padding = 'same', name = 'stem_conv0', activation = tf.keras.activations.gelu)(inputs);
@@ -216,16 +216,16 @@ def NFNet(variant = 'F0', width = 1., use_two_convs = True, se_ratio = 0.5, stoc
   results = WSConv2D(nfnet_params[variant]['width'][0] // 2, kernel_size = (3,3), strides = (2,2), padding = 'same', name = 'stem_conv3')(results);
   # 2) body
   index = 0;
-  expected_std = 1.; # WSConv2D does not change distribution, therefore results ~ N(0,1)
+  stdvar = 1.; # WSConv2D does not change distribution, therefore results ~ N(0,1)
   for block_width, stage_depth, expand_ratio, group_size, big_wdith, stride in zip(nfnet_params[variant]['width'], nfnet_params[variant]['depth'], nfnet_params[variant]['expansion'],
                                                                                    nfnet_params[variant]['group_width'], nfnet_params[variant]['big_width'], nfnet_params[variant]['stride_pattern']):
     for block_index in range(stage_depth):
       # NOTE: within a stage the var(shortcut) is accumulated, rather than normalized
-      results, res_avg_var = NFBlock(results.shape[-1], int(block_width * width), beta = expected_std, stride = stride if block_index == 0 else 1,
+      results, res_avg_var = NFBlock(results.shape[-1], int(block_width * width), beta = stdvar, stride = stride if block_index == 0 else 1,
                                      group_size = group_size, big_width = big_width, expansion = expand_ratio, use_two_convs = use_two_convs,
                                      se_ratio = se_ratio, stochdepth_rate = stochdepth_rate * index / sum(nfnet_params[variant]['depth']))(results);
       index += 1;
-      expected_std = 1. if block_index == 0 else (expected_std**2 + alpha**2)**0.5;
+      stdvar = 1. if block_index == 0 else (stdvar**2 + alpha**2)**0.5;
 
   return tf.keras.Model(inputs = inputs, outputs = results);
 
