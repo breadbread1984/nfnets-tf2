@@ -84,12 +84,26 @@ class WSConv2D(tf.keras.layers.Conv2D):
       return self.activation(outputs);
     return outputs;
 
-def NFBlock(in_channel, out_channel, alpha = 0.2, beta = 1.0, stride = 1):
+def NFBlock(in_channel, out_channel, kernel_size = 3, alpha = 0.2, beta = 1.0, stride = 1, group_size = 128, big_width = True, expansion = 0.5, use_two_convs = True):
   inputs = tf.keras.Input((None, None, in_channel));
   results = tf.keras.layers.GELU()(inputs);
   results = tf.keras.layers.Lambda(lambda x, b: x * b, arguments = {'b': beta})(results);
   if stride > 1:
     shortcut = tf.keras.layers.AveragePooling2D(pool_size = (2,2), strides = (2,2), padding = 'same')(results);
+    shortcut = WSConv2D(out_channel, kernel_size = (1,1), padding = 'same', name = 'conv_shortcut')(shortcut);
+  elif in_channel != out_channel:
+    shortcut = WSConv2D(out_channel, kernel_size = (1,1), padding = 'same', name = 'conv_shortcut')(shortcut);
+  else:
+    shortcut = results;
+  width = int((out_channel if big_width else in_channel) * expansion);
+  results = WSConv2D(group_size * (width // group_size), kernel_size = (1,1), groups = width // group_size, padding = 'same', name = 'conv0', activation = tf.keras.activations.gelu)(results);
+  results = WSConv2D(group_size * (width // group_size), kernel_size = (kernel_size, kernel_size), groups = width // group_size, padding = 'same', name = 'conv1')(results);
+  if use_two_convs:
+    results = tfa.layers.GELU(results);
+    results = WSConv2D(group_size * (width // group_size), kernel_size = (kernel_size, kernel_size), groups = width // group_size, padding = 'same', name = 'conv1b')(results);
+  results = tfa.layers.GELU(results);
+  results = WSConv2D(out_channel, kernel_size = (1,1), padding = 'same', name = 'conv2')(results);
+  
 
 def NFNet(variant = 'F0'):
   assert variant in ['F0', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7'];
