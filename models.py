@@ -215,7 +215,7 @@ def NFNet(variant = 'F0', width = 1., use_two_convs = True, se_ratio = 0.5, stoc
   for block_width, stage_depth, expand_ratio, group_size, big_wdith, stride in zip(nfnet_params[variant]['width'], nfnet_params[variant]['depth'], nfnet_params[variant]['expansion'],
                                                                                    nfnet_params[variant]['group_width'], nfnet_params[variant]['big_width'], nfnet_params[variant]['stride_pattern']):
     for block_index in range(stage_depth):
-      results = NFBlock(results.shape[-1], int(block_width * width), beta = 1. / expected_std, stride = stride if block_index == 0 else 1,
+      results, res_avg_var = NFBlock(results.shape[-1], int(block_width * width), beta = 1. / expected_std, stride = stride if block_index == 0 else 1,
                         group_size = group_size, big_width = big_width, expansion = expand_ratio, use_two_convs = use_two_convs,
                         se_ratio = se_ratio, stochdepth_rate = stochdepth_rate * index / sum(nfnet_params[variant]['depth']))(results);
       index += 1;
