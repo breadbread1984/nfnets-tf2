@@ -175,11 +175,14 @@ def NFBlock(in_channel, out_channel, kernel_size = 3, alpha = 0.2, beta = 1.0, s
   results = tf.keras.layers.Lambda(lambda x, b: x / b, arguments = {'b': beta})(results);
   # 2) short cut output
   if stride > 1:
+    # NOTE: the first block of a stage
     shortcut = tf.keras.layers.AveragePooling2D(pool_size = (2,2), strides = (2,2), padding = 'same')(results);
     shortcut = WSConv2D(out_channel, kernel_size = (1,1), padding = 'same', name = 'conv_shortcut')(shortcut);
   elif in_channel != out_channel:
+    # NOTE: the first block of a stage
     shortcut = WSConv2D(out_channel, kernel_size = (1,1), padding = 'same', name = 'conv_shortcut')(results);
   else:
+    # NOTE: within one stage the var(shortcut) is accumulated, rather than normalized
     shortcut = inputs;
   # 3) residual branch uses weight scaled convolution to prevent meanshift
   width = int((out_channel if big_width else in_channel) * expansion);
@@ -217,6 +220,7 @@ def NFNet(variant = 'F0', width = 1., use_two_convs = True, se_ratio = 0.5, stoc
   for block_width, stage_depth, expand_ratio, group_size, big_wdith, stride in zip(nfnet_params[variant]['width'], nfnet_params[variant]['depth'], nfnet_params[variant]['expansion'],
                                                                                    nfnet_params[variant]['group_width'], nfnet_params[variant]['big_width'], nfnet_params[variant]['stride_pattern']):
     for block_index in range(stage_depth):
+      # NOTE: within a stage the var(shortcut) is accumulated, rather than normalized
       results, res_avg_var = NFBlock(results.shape[-1], int(block_width * width), beta = expected_std, stride = stride if block_index == 0 else 1,
                                      group_size = group_size, big_width = big_width, expansion = expand_ratio, use_two_convs = use_two_convs,
                                      se_ratio = se_ratio, stochdepth_rate = stochdepth_rate * index / sum(nfnet_params[variant]['depth']))(results);
