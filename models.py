@@ -182,7 +182,7 @@ def NFBlock(in_channel, out_channel, kernel_size = 3, alpha = 0.2, beta = 1.0, s
     # NOTE: the first block of a stage
     shortcut = WSConv2D(out_channel, kernel_size = (1,1), padding = 'same', name = 'conv_shortcut')(results);
   else:
-    # NOTE: within one stage the var(shortcut) is accumulated, rather than normalized
+    # NOTE: during other blocks (than the first block) of a stage, the var(shortcut) is accumulated, rather than normalized
     shortcut = inputs;
   # 3) residual branch uses weight scaled convolution to prevent meanshift
   width = int((out_channel if big_width else in_channel) * expansion);
