@@ -84,7 +84,18 @@ class WSConv2D(tf.keras.layers.Conv2D):
       return self.activation(outputs);
     return outputs;
 
-def NFBlock(in_channel, out_channel, kernel_size = 3, alpha = 0.2, beta = 1.0, stride = 1, group_size = 128, big_width = True, expansion = 0.5, use_two_convs = True):
+def SqueezeExcite(in_channel, out_channel, se_ratio = 0.5, hidden_ch = None):
+  if se_ratio is None and hidden_ch is None:
+    raise Exception('either se_ratio or hidden_ch must be provided!');
+  if hidden_ch is None:
+    hidden_ch = max(1, int(in_channel * se_ratio));
+  inputs = tf.keras.Input((None, None, in_channel)); # inputs.shape = (batch, height, width, in_channel)
+  results = tf.keras.layers.Lambda(lambda x: tf.math.reduce_mean(x, axis = (1,2), keepdims = True))(inputs); # results.shape = (batch, 1, 1, in_channel)
+  results = tf.keras.layers.Dense(hidden_ch, activation = tf.keras.activations.relu)(results); # results.shape = (batch, 1, 1, hidden_ch)
+  results = tf.keras.layers.Dense(out_channel, activation = tf.keras.activations.sigmoid)(results); # results.shape = (batch, 1, 1, out_channel)
+  return tf.keras.Model(inputs = inputs, outputs = results);
+
+def NFBlock(in_channel, out_channel, kernel_size = 3, alpha = 0.2, beta = 1.0, stride = 1, group_size = 128, big_width = True, expansion = 0.5, use_two_convs = True, se_ratio = 0.5):
   inputs = tf.keras.Input((None, None, in_channel));
   results = tf.keras.layers.GELU()(inputs);
   results = tf.keras.layers.Lambda(lambda x, b: x * b, arguments = {'b': beta})(results);
@@ -102,7 +113,9 @@ def NFBlock(in_channel, out_channel, kernel_size = 3, alpha = 0.2, beta = 1.0, s
     results = tfa.layers.GELU(results);
     results = WSConv2D(group_size * (width // group_size), kernel_size = (kernel_size, kernel_size), groups = width // group_size, padding = 'same', name = 'conv1b')(results);
   results = tfa.layers.GELU(results);
-  results = WSConv2D(out_channel, kernel_size = (1,1), padding = 'same', name = 'conv2')(results);
+  results = WSConv2D(out_channel, kernel_size = (1,1), padding = 'same', name = 'conv2')(results); # results.shape = (batch, height, width, out_channel)
+  attention = SqueezeExcite(out_channel, out_channel, se_ratio)(results); # ch_attention.shape = (batch, height, width, out_channel)
+  results = tf.keras.layers.Lambda(lambda x: x[0] * 2 * x[1])([attention, results]); # results.shape = (batch, height, width, out_channel)
   
 
 def NFNet(variant = 'F0'):
