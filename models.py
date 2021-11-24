@@ -190,7 +190,7 @@ def NFBlock(in_channel, out_channel, kernel_size = 3, alpha = 0.2, beta = 1.0, s
     shortcut = inputs;
   # 3) residual branch uses weight scaled convolution to prevent meanshift
   width = int((out_channel if big_width else in_channel) * expansion);
-  results = WSConv2D(group_size * (width // group_size), kernel_size = (1,1), groups = width // group_size, padding = 'same', name = 'conv0', activation = tf.keras.activations.gelu)(results);
+  results = WSConv2D(group_size * (width // group_size), kernel_size = (1,1), padding = 'same', name = 'conv0', activation = tf.keras.activations.gelu)(results);
   results = WSConv2D(group_size * (width // group_size), kernel_size = (kernel_size, kernel_size), groups = width // group_size, padding = 'same', name = 'conv1')(results);
   if use_two_convs:
     results = tfa.layers.GELU()(results);
