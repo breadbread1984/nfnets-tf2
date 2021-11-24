@@ -209,7 +209,7 @@ def NFBlock(in_channel, out_channel, kernel_size = 3, alpha = 0.2, beta = 1.0, s
   results = tf.keras.layers.Lambda(lambda x, a: x[0] * a + x[1], arguments = {'a': alpha})([results, shortcut]);
   return tf.keras.Model(inputs = inputs, outputs = (results, res_avg_var));
 
-def NFNet(variant = 'F0', width = 1., alpha = 0.2, use_two_convs = True, se_ratio = 0.5, stochdepth_rate = 0.1, final_conv_mult = 2, final_conv_ch = None, drop_rate = None, num_classes = 1000):
+def NFNet(variant = 'F0', num_classes = None, width = 1., alpha = 0.2, use_two_convs = True, se_ratio = 0.5, stochdepth_rate = 0.1, final_conv_mult = 2, final_conv_ch = None, drop_rate = None):
   assert variant in ['F0', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7'];
   # NOTE: inputs must satisfy that inputs ~ N(0,1)
   inputs = tf.keras.Input((None, None, 3)); # inputs.shape = (batch, height, width, 3)
@@ -245,7 +245,7 @@ def NFNet(variant = 'F0', width = 1., alpha = 0.2, use_two_convs = True, se_rati
 
 if __name__ == "__main__":
   import numpy as np;
-  a = np.random.normal(size = (4,224,224,3));
-  model = NFNet();
+  a = np.random.normal(size = (4,32,32,3));
+  model = NFNet(num_classes = 10);
   b = model(a);
   model.save('model.h5');
