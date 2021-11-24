@@ -17,17 +17,19 @@ def add_options():
 
 def main(unused_argv):
   if exists(FLAGS.checkpoint):
-    model = tf.keras.moidels.load_model(FLAGS.checkpoint, custom_objects = {'tf': tf}, compile = True);
+    model = tf.keras.models.load_model(FLAGS.checkpoint, custom_objects = {'tf': tf}, compile = True);
     optimizer = model.optimizer;
   else:
     model = NFNet(variant = FLAGS.model, num_classes = 10);
     optimizer = tf.keras.optimizers.Adam(FLAGS.lr);
-    model.compile(optimizer = opitmizer,
+    model.compile(optimizer = optimizer,
                   loss = [tf.keras.losses.SparseCategoricalCrossentropy()],
                   metrics = [tf.keras.metrics.SparseCategoricalAccuracy()]);
   trainset, testset = load_datasets();
-  trainset = trainset.shuffle(FLAGS.batch_size).batch(FLAGS.batch_size).prefetch(tf.data.experimental.AUTOTUNE);
-  testset = testset.shuffle(FLAGS.batch_size).batch(FLAGS.batch_size).prefetch(tf.data.experimental.AUTOTUNE);
+  options = tf.data.Options();
+  options.autotune = True;
+  trainset = trainset.with_options(options).shuffle(FLAGS.batch_size).batch(FLAGS.batch_size);
+  testset = testset.with_options(options).shuffle(FLAGS.batch_size).batch(FLAGS.batch_size);
   callbacks = [
     tf.keras.callbacks.TensorBoard(log_dir = FLAGS.checkpoint),
     tf.keras.callbacks.ModelCheckpoint(filepath = join(FLAGS.checkpoint, 'ckpt'), save_freq = 1000),
