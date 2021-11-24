@@ -128,7 +128,7 @@ def SqueezeExcite(in_channel, out_channel, se_ratio = 0.5, hidden_ch = None):
 
 def StochDepth(in_channel, drop_rate, scale_by_keep = False):
   # sample wise dropout
-  training = tf.python.keras.backend.learning_phase();
+  training = tf.keras.backend.learning_phase();
   inputs = tf.keras.Input((None, None, in_channel));
   results = inputs;
   if not training:
@@ -145,7 +145,7 @@ class AutoScaled(tf.keras.layers.Layer):
     assert initializer in ['ones', 'zeros'];
     self.scalar = scalar;
     self.initializer = initializer;
-    super(AutoGained, self).__init__(**kwargs);
+    super(AutoScaled, self).__init__(**kwargs);
   def build(self, input_shape):
     if self.initializer == 'ones':
       initializer = tf.keras.initializers.Ones();
@@ -174,7 +174,7 @@ def NFBlock(in_channel, out_channel, kernel_size = 3, alpha = 0.2, beta = 1.0, s
   # alpha: variance weight of residual branch, the variance of the output of the normalization free residual block is (1 + alpha**2) * var(inputs)
   # beta: sqrt(var(inputs))
   inputs = tf.keras.Input((None, None, in_channel));
-  results = tf.keras.layers.GELU()(inputs);
+  results = tfa.layers.GELU()(inputs);
   # 1) normalize input to make results ~ N(0,1)
   results = tf.keras.layers.Lambda(lambda x, b: x / b, arguments = {'b': beta})(results);
   # 2) short cut output
@@ -193,9 +193,9 @@ def NFBlock(in_channel, out_channel, kernel_size = 3, alpha = 0.2, beta = 1.0, s
   results = WSConv2D(group_size * (width // group_size), kernel_size = (1,1), groups = width // group_size, padding = 'same', name = 'conv0', activation = tf.keras.activations.gelu)(results);
   results = WSConv2D(group_size * (width // group_size), kernel_size = (kernel_size, kernel_size), groups = width // group_size, padding = 'same', name = 'conv1')(results);
   if use_two_convs:
-    results = tfa.layers.GELU(results);
+    results = tfa.layers.GELU()(results);
     results = WSConv2D(group_size * (width // group_size), kernel_size = (kernel_size, kernel_size), groups = width // group_size, padding = 'same', name = 'conv1b')(results);
-  results = tfa.layers.GELU(results);
+  results = tfa.layers.GELU()(results);
   results = WSConv2D(out_channel, kernel_size = (1,1), padding = 'same', name = 'conv2')(results); # results.shape = (batch, height, width, out_channel)
   # use channel attention
   attention = SqueezeExcite(out_channel, out_channel, se_ratio)(results); # ch_attention.shape = (batch, height, width, out_channel)
@@ -209,7 +209,7 @@ def NFBlock(in_channel, out_channel, kernel_size = 3, alpha = 0.2, beta = 1.0, s
   results = tf.keras.layers.Lambda(lambda x, a: x[0] * a + x[1], arguments = {'a': alpha})([results, shortcut]);
   return tf.keras.Model(inputs = inputs, outputs = (results, res_avg_var));
 
-def NFNet(variant = 'F0', width = 1., use_two_convs = True, se_ratio = 0.5, stochdepth_rate = 0.1):
+def NFNet(variant = 'F0', width = 1., alpha = 0.2, use_two_convs = True, se_ratio = 0.5, stochdepth_rate = 0.1, final_conv_mult = 2, final_conv_ch = None, drop_rate = None, num_classes = 1000):
   assert variant in ['F0', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7'];
   # NOTE: inputs must satisfy that inputs ~ N(0,1)
   inputs = tf.keras.Input((None, None, 3)); # inputs.shape = (batch, height, width, 3)
@@ -221,16 +221,26 @@ def NFNet(variant = 'F0', width = 1., use_two_convs = True, se_ratio = 0.5, stoc
   # 2) body
   index = 0;
   stdvar = 1.; # WSConv2D does not change distribution, therefore results ~ N(0,1)
-  for block_width, stage_depth, expand_ratio, group_size, big_wdith, stride in zip(nfnet_params[variant]['width'], nfnet_params[variant]['depth'], nfnet_params[variant]['expansion'],
+  for block_width, stage_depth, expand_ratio, group_size, big_width, stride in zip(nfnet_params[variant]['width'], nfnet_params[variant]['depth'], nfnet_params[variant]['expansion'],
                                                                                    nfnet_params[variant]['group_width'], nfnet_params[variant]['big_width'], nfnet_params[variant]['stride_pattern']):
+    # loop over stages
     for block_index in range(stage_depth):
+      # loop over blocks within this stage
       # NOTE: within a stage the var(shortcut) is accumulated, rather than normalized
-      results, res_avg_var = NFBlock(results.shape[-1], int(block_width * width), beta = stdvar, stride = stride if block_index == 0 else 1,
+      results, res_avg_var = NFBlock(results.shape[-1], int(block_width * width), alpha = alpha, beta = stdvar, stride = stride if block_index == 0 else 1,
                                      group_size = group_size, big_width = big_width, expansion = expand_ratio, use_two_convs = use_two_convs,
                                      se_ratio = se_ratio, stochdepth_rate = stochdepth_rate * index / sum(nfnet_params[variant]['depth']))(results);
       index += 1;
       stdvar = 1. if block_index == 0 else (stdvar**2 + alpha**2)**0.5;
-
+  # 3) head
+  if final_conv_mult is None and final_conv_ch is None:
+    raise Exception('either final_conv_mult or final_conv_ch must be given!');
+  results = WSConv2D(final_conv_ch if final_conv_ch is not None else int(final_conv_mult * results.shape[-1]), kernel_size = (1,1), padding = 'same', name = 'final_conv', activation = tf.keras.activations.gelu)(results);
+  results = tf.keras.layers.Lambda(lambda x: tf.math.reduce_mean(x, (1,2)))(results); # results.shape = (batch, channels)
+  if drop_rate is None: drop_rate = nfnet_params[variant]['drop_rate'];
+  if drop_rate > 0.:
+    results = tf.keras.layers.Dropout(rate = drop_rate)(results);
+  results = tf.keras.layers.Dense(num_classes)(results);
   return tf.keras.Model(inputs = inputs, outputs = results);
 
 if __name__ == "__main__":
