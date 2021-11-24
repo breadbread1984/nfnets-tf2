@@ -27,7 +27,7 @@ def main(unused_argv):
                   metrics = [tf.keras.metrics.SparseCategoricalAccuracy()]);
   trainset, testset = load_datasets();
   options = tf.data.Options();
-  options.autotune = True;
+  options.autotune.enabled = True;
   trainset = trainset.with_options(options).shuffle(FLAGS.batch_size).batch(FLAGS.batch_size);
   testset = testset.with_options(options).shuffle(FLAGS.batch_size).batch(FLAGS.batch_size);
   callbacks = [
