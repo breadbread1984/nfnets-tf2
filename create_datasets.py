@@ -8,7 +8,7 @@ def download():
   cifar10_builder.download_and_prepare();
 
 def parse_sample(features):
-  return features['image'], features['label'];
+  return tf.cast(features['image'], dtype = tf.float32) / 128. - 1, features['label'];
 
 def load_datasets():
   trainset = tfds.load(name = 'cifar10', split = 'train', download = False);
